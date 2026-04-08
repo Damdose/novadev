@@ -1,7 +1,11 @@
 // Google OAuth helper — stores tokens in memory (replace with DB in production)
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
+function getClientId() {
+  return process.env.GOOGLE_CLIENT_ID || "";
+}
+function getClientSecret() {
+  return process.env.GOOGLE_CLIENT_SECRET || "";
+}
 
 const SCOPES = [
   "https://www.googleapis.com/auth/business.manage",
@@ -15,7 +19,7 @@ let tokenStore: {
 
 export function getAuthUrl(redirectUri: string) {
   const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
+    client_id: getClientId(),
     redirect_uri: redirectUri,
     response_type: "code",
     scope: SCOPES.join(" "),
@@ -31,8 +35,8 @@ export async function exchangeCode(code: string, redirectUri: string) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
+      client_id: getClientId(),
+      client_secret: getClientSecret(),
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
@@ -57,8 +61,8 @@ async function refreshAccessToken() {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
+      client_id: getClientId(),
+      client_secret: getClientSecret(),
       refresh_token: tokenStore.refresh_token,
       grant_type: "refresh_token",
     }),
