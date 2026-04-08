@@ -3,7 +3,7 @@ import { isAuthenticated } from "@/lib/google-auth";
 import { fetchAccounts, fetchLocations } from "@/lib/google-business";
 
 export async function GET(request: NextRequest) {
-  if (!isAuthenticated()) {
+  if (!(await isAuthenticated())) {
     return Response.json({ error: "Non connecté à Google" }, { status: 401 });
   }
 

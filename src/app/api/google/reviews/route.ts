@@ -2,9 +2,8 @@ import { NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/google-auth";
 import { getCachedData, syncAll, replyToReview, deleteReviewReply } from "@/lib/google-business";
 
-// GET — list reviews (from cache or fresh sync)
 export async function GET() {
-  if (!isAuthenticated()) {
+  if (!(await isAuthenticated())) {
     return Response.json({ error: "Non connecté à Google" }, { status: 401 });
   }
 
@@ -26,10 +25,8 @@ export async function GET() {
   }
 }
 
-// POST — reply to a review or delete a reply
-// Body: { reviewName, comment } to reply, { reviewName, action: "delete" } to delete
 export async function POST(request: NextRequest) {
-  if (!isAuthenticated()) {
+  if (!(await isAuthenticated())) {
     return Response.json({ error: "Non connecté à Google" }, { status: 401 });
   }
 
@@ -51,8 +48,6 @@ export async function POST(request: NextRequest) {
     }
 
     await replyToReview(reviewName, comment);
-
-    // Refresh cache after replying
     await syncAll();
 
     return Response.json({ success: true, message: "Réponse envoyée" });
