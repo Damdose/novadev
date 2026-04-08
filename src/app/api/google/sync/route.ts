@@ -1,5 +1,5 @@
 import { isAuthenticated } from "@/lib/google-auth";
-import { syncAll, getCachedData } from "@/lib/google-business";
+import { syncAll } from "@/lib/google-business";
 
 export async function GET() {
   if (!(await isAuthenticated())) {
@@ -7,10 +7,6 @@ export async function GET() {
   }
 
   try {
-    const cached = getCachedData();
-    if (cached) {
-      return Response.json(cached);
-    }
     const data = await syncAll();
     return Response.json(data);
   } catch (e) {

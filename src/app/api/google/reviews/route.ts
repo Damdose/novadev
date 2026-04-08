@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { isAuthenticated } from "@/lib/google-auth";
-import { getCachedData, syncAll, replyToReview, deleteReviewReply } from "@/lib/google-business";
+import { syncAll, replyToReview, deleteReviewReply } from "@/lib/google-business";
 
 export async function GET() {
   if (!(await isAuthenticated())) {
@@ -8,10 +8,7 @@ export async function GET() {
   }
 
   try {
-    let data = getCachedData();
-    if (!data) {
-      data = await syncAll();
-    }
+    const data = await syncAll();
 
     return Response.json({
       reviews: data.reviews,
@@ -48,8 +45,6 @@ export async function POST(request: NextRequest) {
     }
 
     await replyToReview(reviewName, comment);
-    await syncAll();
-
     return Response.json({ success: true, message: "Réponse envoyée" });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue";

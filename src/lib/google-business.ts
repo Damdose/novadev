@@ -1,4 +1,4 @@
-// Google Business Profile data types and helpers
+// Google Business Profile data types and API calls
 import { getAccessToken } from "./google-auth";
 
 // --- Types ---
@@ -20,8 +20,8 @@ export interface GoogleReview {
 }
 
 export interface GoogleLocation {
-  name: string; // e.g. "accounts/123/locations/456"
-  title: string; // Business name
+  name: string;
+  title: string;
   storefrontAddress?: {
     addressLines: string[];
     locality: string;
@@ -33,34 +33,12 @@ export interface GoogleLocation {
   };
 }
 
-export interface GoogleBusinessMetrics {
-  searches: number;
-  views: number;
-  actions: number;
-  calls: number;
-  directions: number;
-  website: number;
-}
-
 export interface SyncedData {
   lastSyncAt: string;
   location: GoogleLocation | null;
   reviews: GoogleReview[];
   totalReviewCount: number;
   averageRating: number;
-  metrics: GoogleBusinessMetrics | null;
-}
-
-// --- In-memory cache ---
-
-let cachedData: SyncedData | null = null;
-
-export function getCachedData(): SyncedData | null {
-  return cachedData;
-}
-
-export function setCachedData(data: SyncedData) {
-  cachedData = data;
 }
 
 // --- Rating helpers ---
@@ -83,7 +61,7 @@ export async function fetchAccounts(): Promise<{ name: string; accountName: stri
   const token = await getAccessToken();
   const res = await fetch(
     "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
   );
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
@@ -94,7 +72,7 @@ export async function fetchLocations(accountName: string): Promise<GoogleLocatio
   const token = await getAccessToken();
   const res = await fetch(
     `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,storefrontAddress,websiteUri,phoneNumbers`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
   );
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
@@ -109,7 +87,7 @@ export async function fetchReviews(locationName: string): Promise<{
   const token = await getAccessToken();
   const res = await fetch(
     `https://mybusiness.googleapis.com/v4/${locationName}/reviews?pageSize=50`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
   );
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
@@ -169,15 +147,11 @@ export async function syncAll(): Promise<SyncedData> {
   // 3. Get reviews
   const { reviews, totalReviewCount, averageRating } = await fetchReviews(location.name);
 
-  const synced: SyncedData = {
+  return {
     lastSyncAt: new Date().toISOString(),
     location,
     reviews,
     totalReviewCount,
     averageRating,
-    metrics: null, // Performance API requires separate access
   };
-
-  setCachedData(synced);
-  return synced;
 }

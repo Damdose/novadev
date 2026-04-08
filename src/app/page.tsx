@@ -54,6 +54,7 @@ export default function DashboardPage() {
   const [googleLocation, setGoogleLocation] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/google/status")
@@ -67,15 +68,20 @@ export default function DashboardPage() {
   }, []);
 
   const loadGoogleData = async () => {
+    setGoogleError(null);
     try {
-      const res = await fetch("/api/google/reviews");
+      const res = await fetch("/api/google/sync");
       const data = await res.json();
-      if (!data.error) {
+      if (data.error) {
+        setGoogleError(data.error);
+      } else {
         setGoogleReviews(data.reviews || []);
         setGoogleAvg(data.averageRating || 0);
         setGoogleTotal(data.totalReviewCount || 0);
-        setGoogleLocation(data.locationName || "");
+        setGoogleLocation(data.location?.title || "");
       }
+    } catch {
+      setGoogleError("Impossible de contacter l'API Google");
     } finally {
       setLoading(false);
     }
@@ -83,15 +89,20 @@ export default function DashboardPage() {
 
   const forceSync = async () => {
     setSyncing(true);
+    setGoogleError(null);
     try {
       const res = await fetch("/api/google/sync", { method: "POST" });
       const data = await res.json();
-      if (!data.error) {
+      if (data.error) {
+        setGoogleError(data.error);
+      } else {
         setGoogleReviews(data.reviews || []);
         setGoogleAvg(data.averageRating || 0);
         setGoogleTotal(data.totalReviewCount || 0);
         setGoogleLocation(data.location?.title || "");
       }
+    } catch {
+      setGoogleError("Impossible de contacter l'API Google");
     } finally {
       setSyncing(false);
     }
@@ -135,6 +146,24 @@ export default function DashboardPage() {
               <Badge variant="outline" className="ml-2">{googleLocation}</Badge>
             )}
           </div>
+
+          {googleError && googleConnected && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="py-6">
+                <div className="flex items-center gap-3">
+                  <MessageSquare className="h-5 w-5 text-red-500 shrink-0" />
+                  <div>
+                    <p className="font-medium text-red-800">Erreur de synchronisation Google</p>
+                    <p className="text-sm text-red-600 mt-1">{googleError}</p>
+                  </div>
+                  <Button variant="outline" size="sm" className="ml-auto shrink-0 gap-2" onClick={forceSync} disabled={syncing}>
+                    {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                    Réessayer
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {!googleConnected ? (
             <Card>
