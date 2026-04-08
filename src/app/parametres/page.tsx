@@ -40,7 +40,7 @@ export default function SettingsPage() {
   );
 
   // Destination page state
-  const [googleUrl, setGoogleUrl] = useState("https://g.page/r/novadev/review");
+  const [googleUrl, setGoogleUrl] = useState("https://share.google/igfsYUvospskPEr9k");
   const [threshold, setThreshold] = useState(String(POSITIVE_THRESHOLD));
   const [positiveTitle, setPositiveTitle] = useState("Merci pour votre retour !");
   const [positiveMessage, setPositiveMessage] = useState(

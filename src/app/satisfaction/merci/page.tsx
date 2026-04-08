@@ -59,7 +59,7 @@ function MerciContent() {
                 </div>
 
                 <a
-                  href="https://g.page/r/novadev/review"
+                  href="https://share.google/igfsYUvospskPEr9k"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
