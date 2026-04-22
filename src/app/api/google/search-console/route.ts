@@ -10,20 +10,23 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get("startDate") || getDefaultStartDate();
     const endDate = searchParams.get("endDate") || getDefaultEndDate();
 
+    // Tenter l'API live si authentifié
     const authenticated = await isAuthenticated();
-
-    // Si connecté à l'API, utiliser les données live
     if (authenticated) {
-      if (mode === "queries") {
-        const limit = parseInt(searchParams.get("limit") || "10");
-        const queries = await fetchTopQueries(startDate, endDate, limit);
-        return Response.json({ queries });
+      try {
+        if (mode === "queries") {
+          const limit = parseInt(searchParams.get("limit") || "10");
+          const queries = await fetchTopQueries(startDate, endDate, limit);
+          return Response.json({ queries });
+        }
+        const data = await fetchSearchPerformance(startDate, endDate);
+        return Response.json(data);
+      } catch {
+        // API live échoue → fallback statique
       }
-      const data = await fetchSearchPerformance(startDate, endDate);
-      return Response.json(data);
     }
 
-    // Sinon, fallback sur les données statiques (export GSC du 22/04/2026)
+    // Données statiques (export GSC du 22/04/2026)
     if (mode === "queries") {
       const limit = parseInt(searchParams.get("limit") || "10");
       return Response.json({ queries: getStaticTopQueries(limit), static: true });
