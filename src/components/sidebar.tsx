@@ -13,14 +13,18 @@ import {
   MessageSquare,
   Activity,
   Mail,
+  Search,
+  Globe,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/suivi", label: "Suivi KPI", icon: Activity },
+  { href: "/suivi", label: "Metrics", icon: BarChart3 },
+  { href: "/trafic", label: "Trafic", icon: Activity },
+  { href: "/seo", label: "SEO", icon: Search },
   { href: "/campagnes", label: "Campagnes avis", icon: Send },
   { href: "/mail", label: "Mail satisfaction", icon: Mail },
-  { href: "/resultats", label: "Résultats enquête", icon: BarChart3 },
+  { href: "/resultats", label: "Résultats enquête", icon: Globe },
   { href: "/avis", label: "Avis Google", icon: MessageSquare },
   { href: "/parametres", label: "Paramètres", icon: Settings },
 ];

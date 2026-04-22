@@ -29,15 +29,25 @@ import {
   MessageCircle,
   Globe,
   Plus,
-  TrendingUp,
-  TrendingDown,
   Minus,
   Pencil,
   Trash2,
   ArrowUpRight,
   ArrowDownRight,
-  BarChart3,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
+
+// ─── Types ───────────────────────────────────────────────
 
 interface WeeklyKpi {
   id: string;
@@ -49,7 +59,7 @@ interface WeeklyKpi {
   traficSite: number;
 }
 
-// ─── Helpers ──────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────
 
 function getMonday(d: Date): Date {
   const date = new Date(d);
@@ -68,12 +78,19 @@ function formatWeek(dateStr: string): string {
   return `${fmt(date)} - ${fmt(endOfWeek)}`;
 }
 
+function shortWeek(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
 function pctChange(current: number, previous: number): number {
   if (previous === 0) return current > 0 ? 100 : 0;
   return Math.round(((current - previous) / previous) * 100);
 }
 
-function EvolutionBadge({ current, previous }: { current: number; previous: number }) {
+// ─── Small components ────────────────────────────────────
+
+function TrendBadge({ current, previous }: { current: number; previous: number }) {
   const pct = pctChange(current, previous);
   const isUp = pct > 0;
   const isDown = pct < 0;
@@ -86,23 +103,6 @@ function EvolutionBadge({ current, previous }: { current: number; previous: numb
       {isUp ? <ArrowUpRight className="h-3 w-3" /> : isDown ? <ArrowDownRight className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
       {isUp ? "+" : ""}{pct}%
     </span>
-  );
-}
-
-function Sparkline({ data, color }: { data: number[]; color: string }) {
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  return (
-    <div className="flex items-end gap-[3px] h-8">
-      {data.map((value, i) => (
-        <div
-          key={i}
-          className={`rounded-sm w-[5px] transition-all ${color} ${i === data.length - 1 ? "opacity-100" : "opacity-40"}`}
-          style={{ height: `${Math.max(((value - min) / range) * 100, 12)}%` }}
-        />
-      ))}
-    </div>
   );
 }
 
@@ -121,7 +121,7 @@ function CellTrend({ current, previous }: { current: number; previous?: number }
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────
+// ─── Page ────────────────────────────────────────────────
 
 export default function SuiviPage() {
   const [kpis, setKpis] = useState<WeeklyKpi[]>([]);
@@ -130,12 +130,17 @@ export default function SuiviPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Sync states
+  const [syncingWebflow, setSyncingWebflow] = useState(false);
+  const [syncingTraffic, setSyncingTraffic] = useState(false);
+  const [analyticsConnected, setAnalyticsConnected] = useState(false);
+
   const fetchKpis = useCallback(async () => {
     try {
       const res = await fetch("/api/kpi");
       const data = await res.json();
       setKpis(
-        data.map((k: { id: string; weekStart: string; messagesWebflow: number; appelsCentre: number; rdvDoctolib: number; messagesDoctolib: number; traficSite: number }) => ({
+        data.map((k: WeeklyKpi & { weekStart: string }) => ({
           ...k,
           weekStart: k.weekStart.split("T")[0],
         }))
@@ -147,10 +152,54 @@ export default function SuiviPage() {
     }
   }, []);
 
+  const checkAnalytics = useCallback(async () => {
+    try {
+      const res = await fetch("/api/google/analytics");
+      setAnalyticsConnected(res.status !== 401 && res.ok);
+    } catch {
+      setAnalyticsConnected(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchKpis();
-  }, [fetchKpis]);
+    checkAnalytics();
+  }, [fetchKpis, checkAnalytics]);
 
+  // Auto-fetch Webflow count for a given week
+  const autoSyncWebflow = async (weekStart: string) => {
+    setSyncingWebflow(true);
+    try {
+      const res = await fetch(`/api/webflow?weekStart=${weekStart}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.count !== undefined) {
+          setForm((prev) => ({ ...prev, messagesWebflow: data.count }));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to sync Webflow:", e);
+    } finally {
+      setSyncingWebflow(false);
+    }
+  };
+
+  const syncWeekTraffic = async (weekStart: string) => {
+    setSyncingTraffic(true);
+    try {
+      const res = await fetch(`/api/google/analytics?mode=week&weekStart=${weekStart}`);
+      const data = await res.json();
+      if (data.sessions !== undefined) {
+        setForm((prev) => ({ ...prev, traficSite: data.sessions }));
+      }
+    } catch (e) {
+      console.error("Failed to sync traffic:", e);
+    } finally {
+      setSyncingTraffic(false);
+    }
+  };
+
+  // KPI form
   const [form, setForm] = useState({
     weekStart: getMonday(new Date()).toISOString().split("T")[0],
     messagesWebflow: 0,
@@ -187,10 +236,23 @@ export default function SuiviPage() {
     };
   }, [kpis, totals]);
 
+  // Chart data (reversed so oldest is first)
+  const chartData = useMemo(() => {
+    return [...kpis].reverse().map((k) => ({
+      week: shortWeek(k.weekStart),
+      "Messages Webflow": k.messagesWebflow,
+      "Appels centre": k.appelsCentre,
+      "RDV Doctolib": k.rdvDoctolib,
+      "Messages Doctolib": k.messagesDoctolib,
+      "Trafic site": k.traficSite,
+    }));
+  }, [kpis]);
+
   const openNew = () => {
+    const weekStart = getMonday(new Date()).toISOString().split("T")[0];
     setEditing(null);
     setForm({
-      weekStart: getMonday(new Date()).toISOString().split("T")[0],
+      weekStart,
       messagesWebflow: 0,
       appelsCentre: 0,
       rdvDoctolib: 0,
@@ -198,12 +260,14 @@ export default function SuiviPage() {
       traficSite: 0,
     });
     setDialogOpen(true);
+    autoSyncWebflow(weekStart);
   };
 
   const openEdit = (kpi: WeeklyKpi) => {
+    const weekStart = new Date(kpi.weekStart).toISOString().split("T")[0];
     setEditing(kpi);
     setForm({
-      weekStart: new Date(kpi.weekStart).toISOString().split("T")[0],
+      weekStart,
       messagesWebflow: kpi.messagesWebflow,
       appelsCentre: kpi.appelsCentre,
       rdvDoctolib: kpi.rdvDoctolib,
@@ -211,6 +275,8 @@ export default function SuiviPage() {
       traficSite: kpi.traficSite,
     });
     setDialogOpen(true);
+    // Re-sync Webflow to get latest count
+    autoSyncWebflow(weekStart);
   };
 
   const handleSave = async () => {
@@ -238,163 +304,91 @@ export default function SuiviPage() {
     }
   };
 
-  const statCards = [
-    {
-      label: "Messages Webflow",
-      value: latestKpi?.messagesWebflow ?? 0,
-      previous: previousKpi?.messagesWebflow ?? 0,
-      total: totals.messagesWebflow,
-      avg: averages.messagesWebflow,
-      sparkData: [...kpis].reverse().map((k) => k.messagesWebflow),
-      icon: MessageSquare,
-      color: "text-blue-600",
-      bg: "bg-blue-50",
-      sparkColor: "bg-blue-500",
-    },
-    {
-      label: "Appels centre",
-      value: latestKpi?.appelsCentre ?? 0,
-      previous: previousKpi?.appelsCentre ?? 0,
-      total: totals.appelsCentre,
-      avg: averages.appelsCentre,
-      sparkData: [...kpis].reverse().map((k) => k.appelsCentre),
-      icon: Phone,
-      color: "text-violet-600",
-      bg: "bg-violet-50",
-      sparkColor: "bg-violet-500",
-    },
-    {
-      label: "RDV Doctolib",
-      value: latestKpi?.rdvDoctolib ?? 0,
-      previous: previousKpi?.rdvDoctolib ?? 0,
-      total: totals.rdvDoctolib,
-      avg: averages.rdvDoctolib,
-      sparkData: [...kpis].reverse().map((k) => k.rdvDoctolib),
-      icon: CalendarCheck,
-      color: "text-emerald-600",
-      bg: "bg-emerald-50",
-      sparkColor: "bg-emerald-500",
-    },
-    {
-      label: "Messages Doctolib",
-      value: latestKpi?.messagesDoctolib ?? 0,
-      previous: previousKpi?.messagesDoctolib ?? 0,
-      total: totals.messagesDoctolib,
-      avg: averages.messagesDoctolib,
-      sparkData: [...kpis].reverse().map((k) => k.messagesDoctolib),
-      icon: MessageCircle,
-      color: "text-teal-600",
-      bg: "bg-teal-50",
-      sparkColor: "bg-teal-500",
-    },
-    {
-      label: "Trafic site",
-      value: latestKpi?.traficSite ?? 0,
-      previous: previousKpi?.traficSite ?? 0,
-      total: totals.traficSite,
-      avg: averages.traficSite,
-      sparkData: [...kpis].reverse().map((k) => k.traficSite),
-      icon: Globe,
-      color: "text-amber-600",
-      bg: "bg-amber-50",
-      sparkColor: "bg-amber-500",
-    },
+  const trendCharts = [
+    { key: "Messages Webflow" as const, color: "#3b82f6", label: "Messages Webflow", icon: MessageSquare, value: latestKpi?.messagesWebflow ?? 0, previous: previousKpi?.messagesWebflow ?? 0, total: totals.messagesWebflow, avg: averages.messagesWebflow },
+    { key: "Appels centre" as const, color: "#8b5cf6", label: "Appels centre", icon: Phone, value: latestKpi?.appelsCentre ?? 0, previous: previousKpi?.appelsCentre ?? 0, total: totals.appelsCentre, avg: averages.appelsCentre },
+    { key: "RDV Doctolib" as const, color: "#10b981", label: "RDV Doctolib", icon: CalendarCheck, value: latestKpi?.rdvDoctolib ?? 0, previous: previousKpi?.rdvDoctolib ?? 0, total: totals.rdvDoctolib, avg: averages.rdvDoctolib },
+    { key: "Messages Doctolib" as const, color: "#14b8a6", label: "Messages Doctolib", icon: MessageCircle, value: latestKpi?.messagesDoctolib ?? 0, previous: previousKpi?.messagesDoctolib ?? 0, total: totals.messagesDoctolib, avg: averages.messagesDoctolib },
+    { key: "Trafic site" as const, color: "#f59e0b", label: "Trafic site", icon: Globe, value: latestKpi?.traficSite ?? 0, previous: previousKpi?.traficSite ?? 0, total: totals.traficSite, avg: averages.traficSite },
   ];
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Suivi KPI</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Metrics</h1>
             <p className="text-muted-foreground mt-1">
-              Suivez vos indicateurs clés semaine par semaine
+              Messages, appels et rendez-vous semaine par semaine
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              {kpis.length} semaines enregistrées
-            </Badge>
-            <Button onClick={openNew} className="gap-2">
+            <Badge variant="outline" className="text-xs">{kpis.length} semaines</Badge>
+            <Button onClick={openNew} className="gap-2" size="sm">
               <Plus className="h-4 w-4" />
               Ajouter une semaine
             </Button>
           </div>
         </div>
 
-        {/* KPI summary cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {statCards.map((stat) => (
-            <Card key={stat.label} className="relative overflow-hidden">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">{stat.label}</p>
+        {/* Trend charts */}
+        {chartData.length > 1 && (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {trendCharts.map((chart) => (
+              <Card key={chart.key}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <p className="text-2xl font-bold tabular-nums">{stat.value.toLocaleString("fr-FR")}</p>
-                      <EvolutionBadge current={stat.value} previous={stat.previous} />
+                      <chart.icon className="h-4 w-4" style={{ color: chart.color }} />
+                      <CardTitle className="text-sm font-medium">{chart.label}</CardTitle>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>Moy. {stat.avg.toLocaleString("fr-FR")}/sem</span>
-                      <span>Total {stat.total.toLocaleString("fr-FR")}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl font-bold tabular-nums">{chart.value}</span>
+                      <TrendBadge current={chart.value} previous={chart.previous} />
                     </div>
                   </div>
-                  <div className={`rounded-xl p-2.5 ${stat.color} ${stat.bg}`}>
-                    <stat.icon className="h-4 w-4" />
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span>Moy. {chart.avg}/sem</span>
+                    <span>Total {chart.total.toLocaleString("fr-FR")}</span>
                   </div>
-                </div>
-                <div className="mt-3">
-                  <Sparkline data={stat.sparkData} color={stat.sparkColor} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[140px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                        <defs>
+                          <linearGradient id={`grad-${chart.key}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor={chart.color} stopOpacity={0.3} />
+                            <stop offset="95%" stopColor={chart.color} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="week" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} width={30} />
+                        <Tooltip contentStyle={{ borderRadius: "8px", fontSize: "12px", border: "1px solid hsl(var(--border))" }} />
+                        <Area type="monotone" dataKey={chart.key} stroke={chart.color} fill={`url(#grad-${chart.key})`} strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {/* Table */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Historique hebdomadaire</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Semaine</TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <MessageSquare className="h-3 w-3 text-blue-500" />
-                      Messages
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Phone className="h-3 w-3 text-violet-500" />
-                      Appels
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <CalendarCheck className="h-3 w-3 text-emerald-500" />
-                      RDV
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <MessageCircle className="h-3 w-3 text-teal-500" />
-                      Msg Doctolib
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Globe className="h-3 w-3 text-amber-500" />
-                      Trafic
-                    </div>
-                  </TableHead>
+                  <TableHead className="text-right"><div className="flex items-center justify-end gap-1.5"><MessageSquare className="h-3 w-3 text-blue-500" />Messages</div></TableHead>
+                  <TableHead className="text-right"><div className="flex items-center justify-end gap-1.5"><Phone className="h-3 w-3 text-violet-500" />Appels</div></TableHead>
+                  <TableHead className="text-right"><div className="flex items-center justify-end gap-1.5"><CalendarCheck className="h-3 w-3 text-emerald-500" />RDV</div></TableHead>
+                  <TableHead className="text-right"><div className="flex items-center justify-end gap-1.5"><MessageCircle className="h-3 w-3 text-teal-500" />Msg Doctolib</div></TableHead>
+                  <TableHead className="text-right"><div className="flex items-center justify-end gap-1.5"><Globe className="h-3 w-3 text-amber-500" />Trafic</div></TableHead>
                   <TableHead className="text-right w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -407,44 +401,25 @@ export default function SuiviPage() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{formatWeek(kpi.weekStart)}</span>
-                          {isLatest && (
-                            <Badge variant="outline" className="text-[10px] py-0">
-                              En cours
-                            </Badge>
-                          )}
+                          {isLatest && <Badge variant="outline" className="text-[10px] py-0">En cours</Badge>}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <CellTrend current={kpi.messagesWebflow} previous={prev?.messagesWebflow} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <CellTrend current={kpi.appelsCentre} previous={prev?.appelsCentre} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <CellTrend current={kpi.rdvDoctolib} previous={prev?.rdvDoctolib} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <CellTrend current={kpi.messagesDoctolib} previous={prev?.messagesDoctolib} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <CellTrend current={kpi.traficSite} previous={prev?.traficSite} />
-                      </TableCell>
+                      <TableCell className="text-right"><CellTrend current={kpi.messagesWebflow} previous={prev?.messagesWebflow} /></TableCell>
+                      <TableCell className="text-right"><CellTrend current={kpi.appelsCentre} previous={prev?.appelsCentre} /></TableCell>
+                      <TableCell className="text-right"><CellTrend current={kpi.rdvDoctolib} previous={prev?.rdvDoctolib} /></TableCell>
+                      <TableCell className="text-right"><CellTrend current={kpi.messagesDoctolib} previous={prev?.messagesDoctolib} /></TableCell>
+                      <TableCell className="text-right"><CellTrend current={kpi.traficSite} previous={prev?.traficSite} /></TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-0.5">
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(kpi)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDelete(kpi.id)}>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(kpi)}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDelete(kpi.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
                   );
                 })}
-                {/* Totals row */}
                 <TableRow className="border-t-2 font-semibold bg-muted/20">
-                  <TableCell>Total ({kpis.length} semaines)</TableCell>
+                  <TableCell>Total ({kpis.length} sem.)</TableCell>
                   <TableCell className="text-right tabular-nums">{totals.messagesWebflow}</TableCell>
                   <TableCell className="text-right tabular-nums">{totals.appelsCentre}</TableCell>
                   <TableCell className="text-right tabular-nums">{totals.rdvDoctolib}</TableCell>
@@ -452,9 +427,8 @@ export default function SuiviPage() {
                   <TableCell className="text-right tabular-nums">{totals.traficSite.toLocaleString("fr-FR")}</TableCell>
                   <TableCell />
                 </TableRow>
-                {/* Average row */}
                 <TableRow className="text-muted-foreground bg-muted/10">
-                  <TableCell>Moyenne / semaine</TableCell>
+                  <TableCell>Moyenne / sem.</TableCell>
                   <TableCell className="text-right tabular-nums">{averages.messagesWebflow}</TableCell>
                   <TableCell className="text-right tabular-nums">{averages.appelsCentre}</TableCell>
                   <TableCell className="text-right tabular-nums">{averages.rdvDoctolib}</TableCell>
@@ -468,13 +442,11 @@ export default function SuiviPage() {
         </Card>
       </div>
 
-      {/* Dialog */}
+      {/* Dialog KPI */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {editing ? "Modifier les KPI" : "Ajouter les KPI de la semaine"}
-            </DialogTitle>
+            <DialogTitle>{editing ? "Modifier les KPI" : "Ajouter les KPI de la semaine"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -483,69 +455,52 @@ export default function SuiviPage() {
                 id="weekStart"
                 type="date"
                 value={form.weekStart}
-                onChange={(e) => setForm({ ...form, weekStart: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm((prev) => ({ ...prev, weekStart: val }));
+                  autoSyncWebflow(val);
+                }}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
+              {/* Webflow — auto-synced, read-only */}
               <div className="space-y-2">
-                <Label htmlFor="messagesWebflow">Messages Webflow</Label>
-                <Input
-                  id="messagesWebflow"
-                  type="number"
-                  min={0}
-                  value={form.messagesWebflow}
-                  onChange={(e) => setForm({ ...form, messagesWebflow: parseInt(e.target.value) || 0 })}
-                />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="messagesWebflow">Messages Webflow</Label>
+                  {syncingWebflow && <Loader2 className="h-3 w-3 animate-spin text-blue-500" />}
+                  {!syncingWebflow && <Badge variant="outline" className="text-[10px] py-0 text-blue-600">Auto</Badge>}
+                </div>
+                <Input id="messagesWebflow" type="number" min={0} value={form.messagesWebflow} readOnly className="bg-muted/50" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="appelsCentre">Appels centre</Label>
-                <Input
-                  id="appelsCentre"
-                  type="number"
-                  min={0}
-                  value={form.appelsCentre}
-                  onChange={(e) => setForm({ ...form, appelsCentre: parseInt(e.target.value) || 0 })}
-                />
+                <Input id="appelsCentre" type="number" min={0} value={form.appelsCentre} onChange={(e) => setForm({ ...form, appelsCentre: parseInt(e.target.value) || 0 })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rdvDoctolib">RDV Doctolib</Label>
-                <Input
-                  id="rdvDoctolib"
-                  type="number"
-                  min={0}
-                  value={form.rdvDoctolib}
-                  onChange={(e) => setForm({ ...form, rdvDoctolib: parseInt(e.target.value) || 0 })}
-                />
+                <Input id="rdvDoctolib" type="number" min={0} value={form.rdvDoctolib} onChange={(e) => setForm({ ...form, rdvDoctolib: parseInt(e.target.value) || 0 })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="messagesDoctolib">Messages Doctolib</Label>
-                <Input
-                  id="messagesDoctolib"
-                  type="number"
-                  min={0}
-                  value={form.messagesDoctolib}
-                  onChange={(e) => setForm({ ...form, messagesDoctolib: parseInt(e.target.value) || 0 })}
-                />
+                <Input id="messagesDoctolib" type="number" min={0} value={form.messagesDoctolib} onChange={(e) => setForm({ ...form, messagesDoctolib: parseInt(e.target.value) || 0 })} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="traficSite">Trafic site</Label>
-                <Input
-                  id="traficSite"
-                  type="number"
-                  min={0}
-                  value={form.traficSite}
-                  onChange={(e) => setForm({ ...form, traficSite: parseInt(e.target.value) || 0 })}
-                />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="traficSite">Trafic site</Label>
+                  {analyticsConnected && (
+                    <Button type="button" variant="ghost" size="sm" className="h-6 text-xs gap-1 text-amber-600 hover:text-amber-700" onClick={() => syncWeekTraffic(form.weekStart)} disabled={syncingTraffic}>
+                      {syncingTraffic ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                      Sync GA
+                    </Button>
+                  )}
+                </div>
+                <Input id="traficSite" type="number" min={0} value={form.traficSite} onChange={(e) => setForm({ ...form, traficSite: parseInt(e.target.value) || 0 })} />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Annuler
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {editing ? "Modifier" : "Enregistrer"}
-            </Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Annuler</Button>
+            <Button onClick={handleSave} disabled={saving}>{editing ? "Modifier" : "Enregistrer"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
