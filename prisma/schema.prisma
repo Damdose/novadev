@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Contact {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String
+  phone      String?
+  importedAt DateTime @default(now())
+  status     String   @default("pending") // pending, sent, opened, completed
+  createdAt  DateTime @default(now())
+
+  campaignContacts CampaignContact[]
+  surveyResponses  SurveyResponse[]
+}
+
+model Campaign {
+  id            String   @id @default(cuid())
+  name          String
+  subject       String
+  body          String
+  contactCount  Int      @default(0)
+  sentCount     Int      @default(0)
+  openedCount   Int      @default(0)
+  completedCount Int     @default(0)
+  positiveCount Int      @default(0)
+  negativeCount Int      @default(0)
+  status        String   @default("draft") // draft, sending, sent, completed
+  createdAt     DateTime @default(now())
+
+  contacts        CampaignContact[]
+  surveyResponses SurveyResponse[]
+}
+
+model CampaignContact {
+  id         String   @id @default(cuid())
+  campaignId String
+  contactId  String
+  emailSent  Boolean  @default(false)
+  emailOpened Boolean @default(false)
+  sentAt     DateTime?
+  openedAt   DateTime?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+}
+
+model SurveyResponse {
+  id                String   @id @default(cuid())
+  campaignId        String
+  contactId         String
+  answers           String   // JSON: { scores: number[], recommendation: number, comment: string }
+  averageScore      Float
+  recommendation    Int      @default(0) // 1-4 (Oui tout à fait → Non pas du tout)
+  comment           String   @default("")
+  isPositive        Boolean
+  redirectedToGoogle Boolean @default(false)
+  completedAt       DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+}
+
+model Settings {
+  id               String @id @default("default")
+  googleUrl        String @default("https://share.google/igfsYUvospskPEr9k")
+  threshold        Float  @default(3)
+  positiveTitle    String @default("Merci pour votre retour !")
+  positiveMessage  String @default("Votre experience a ete positive ! Partagez votre avis sur Google pour aider d'autres parents a decouvrir Novadev.")
+  negativeMessage  String @default("Nous avons bien note vos remarques. Notre equipe les examinera avec attention pour ameliorer votre prochaine experience.")
+  buttonText       String @default("Laisser un avis Google")
+  senderName       String @default("Novadev")
+  senderEmail      String @default("contact@novadev.care")
+  questions        String @default("[{\"id\":1,\"title\":\"Acces au centre\",\"questions\":[{\"id\":1,\"text\":\"Facilite pour prendre rendez-vous\"},{\"id\":2,\"text\":\"Delais pour obtenir un rendez-vous\"},{\"id\":3,\"text\":\"Accessibilite du centre (horaires, localisation)\"}]},{\"id\":2,\"title\":\"Accueil et information\",\"questions\":[{\"id\":4,\"text\":\"Qualite de l'accueil au centre\"},{\"id\":5,\"text\":\"Amabilite et disponibilite du personnel\"},{\"id\":6,\"text\":\"Clarte des informations administratives\"},{\"id\":7,\"text\":\"Temps d'attente lors de votre venue\"}]},{\"id\":3,\"title\":\"Qualite de la prise en charge\",\"questions\":[{\"id\":8,\"text\":\"Qualite d'ecoute des professionnels\"},{\"id\":9,\"text\":\"Clarte des explications donnees\"},{\"id\":10,\"text\":\"Prise en compte de vos besoins (ou de ceux de votre enfant)\"}]},{\"id\":4,\"title\":\"Coordination et accompagnement\",\"questions\":[{\"id\":11,\"text\":\"Coordination entre les differents professionnels\"},{\"id\":12,\"text\":\"Comprehension du parcours propose\"},{\"id\":13,\"text\":\"Sentiment d'etre accompagne(e) de maniere globale\"}]},{\"id\":5,\"title\":\"Appreciation globale\",\"questions\":[{\"id\":14,\"text\":\"Satisfaction globale vis-a-vis du centre\"}]}]")
+}
+
+model WeeklyKpi {
+  id               String   @id @default(cuid())
+  weekStart        DateTime // Monday of the week
+  messagesWebflow  Int      @default(0)
+  appelsCentre     Int      @default(0)
+  rdvDoctolib      Int      @default(0)
+  messagesDoctolib Int      @default(0)
+  traficSite       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now())
+
+  @@unique([weekStart])
+}

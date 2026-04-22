@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,15 +24,21 @@ import {
   CheckCircle2,
   Clock,
   FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
-import { Contact } from "@/lib/types";
-import { mockContacts } from "@/lib/mock-data";
 import Papa from "papaparse";
 
-const statusConfig: Record<
-  Contact["status"],
-  { label: string; variant: "default" | "secondary" | "outline" | "destructive"; icon: typeof Clock }
-> = {
+interface Contact {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string | null;
+  importedAt: string;
+  status: string;
+}
+
+const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; icon: typeof Clock }> = {
   pending: { label: "En attente", variant: "outline", icon: Clock },
   sent: { label: "Envoyé", variant: "secondary", icon: Mail },
   opened: { label: "Ouvert", variant: "default", icon: Mail },
@@ -40,11 +46,32 @@ const statusConfig: Record<
 };
 
 export default function ContactsPage() {
-  const [contacts, setContacts] = useState<Contact[]>(mockContacts);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<Partial<Contact>[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchContacts = () => {
+    fetch("/api/contacts")
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => {
+        setContacts(
+          data.map((c: Contact & { importedAt: string }) => ({
+            ...c,
+            importedAt: new Date(c.importedAt).toISOString().split("T")[0],
+          }))
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchContacts();
+  }, []);
 
   const filteredContacts = contacts.filter(
     (c) =>
@@ -62,34 +89,50 @@ export default function ContactsPage() {
       skipEmptyLines: true,
       complete: (results) => {
         const parsed = (results.data as Record<string, string>[]).map((row) => ({
-          firstName: row.prenom || row.firstName || row.Prénom || row.Prenom || "",
+          firstName: row.prenom || row.firstName || row["Prénom"] || row.Prenom || "",
           lastName: row.nom || row.lastName || row.Nom || "",
           email: row.email || row.Email || row.mail || row.Mail || "",
-          phone: row.telephone || row.phone || row.Téléphone || row.Phone || "",
+          phone: row.telephone || row.phone || row["Téléphone"] || row.Phone || "",
         }));
-        setImportPreview(parsed.filter((p: Partial<Contact>) => p.email));
+        setImportPreview(parsed.filter((p) => p.email));
       },
     });
   };
 
-  const confirmImport = () => {
-    const newContacts: Contact[] = importPreview.map((p, i) => ({
-      id: String(contacts.length + i + 1),
-      firstName: p.firstName || "",
-      lastName: p.lastName || "",
-      email: p.email || "",
-      phone: p.phone,
-      importedAt: new Date().toISOString().split("T")[0],
-      status: "pending" as const,
-    }));
-    setContacts([...contacts, ...newContacts]);
-    setImportPreview([]);
-    setShowImport(false);
+  const confirmImport = async () => {
+    setImporting(true);
+    try {
+      await fetch("/api/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(importPreview),
+      });
+      setImportPreview([]);
+      setShowImport(false);
+      fetchContacts();
+    } finally {
+      setImporting(false);
+    }
   };
 
-  const deleteContact = (id: string) => {
+  const deleteContact = async (id: string) => {
+    await fetch("/api/contacts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
     setContacts(contacts.filter((c) => c.id !== id));
   };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -98,22 +141,18 @@ export default function ContactsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
             <p className="text-muted-foreground mt-1">
-              Gérez votre liste de contacts pour les campagnes
+              Importez vos patients depuis Doctolib pour les campagnes
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2">
-              <Download className="h-4 w-4" />
-              Exporter
-            </Button>
             <Dialog open={showImport} onOpenChange={setShowImport}>
               <DialogTrigger render={<Button className="gap-2" />}>
-                  <Upload className="h-4 w-4" />
-                  Importer CSV
+                <Upload className="h-4 w-4" />
+                Importer CSV
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Importer des contacts</DialogTitle>
+                  <DialogTitle>Importer des contacts depuis Doctolib</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
                   {importPreview.length === 0 ? (
@@ -122,14 +161,10 @@ export default function ContactsPage() {
                       onClick={() => fileInputRef.current?.click()}
                     >
                       <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                      <p className="font-medium">
-                        Glissez votre fichier CSV ici
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        ou cliquez pour sélectionner
-                      </p>
+                      <p className="font-medium">Glissez votre fichier CSV Doctolib ici</p>
+                      <p className="text-sm text-muted-foreground mt-1">ou cliquez pour sélectionner</p>
                       <p className="text-xs text-muted-foreground mt-3">
-                        Colonnes attendues : prenom, nom, email, telephone
+                        Colonnes attendues : <code className="bg-muted px-1 py-0.5 rounded">prenom</code>, <code className="bg-muted px-1 py-0.5 rounded">nom</code>, <code className="bg-muted px-1 py-0.5 rounded">email</code>, <code className="bg-muted px-1 py-0.5 rounded">telephone</code>
                       </p>
                       <input
                         ref={fileInputRef}
@@ -142,9 +177,7 @@ export default function ContactsPage() {
                   ) : (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">
-                          {importPreview.length} contacts trouvés
-                        </p>
+                        <p className="text-sm font-medium">{importPreview.length} contacts trouvés</p>
                         <Badge variant="secondary">Aperçu</Badge>
                       </div>
                       <div className="border rounded-lg max-h-64 overflow-auto">
@@ -175,16 +208,11 @@ export default function ContactsPage() {
                         )}
                       </div>
                       <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setImportPreview([]);
-                          }}
-                        >
+                        <Button variant="outline" onClick={() => setImportPreview([])}>
                           Annuler
                         </Button>
-                        <Button onClick={confirmImport} className="gap-2">
-                          <Plus className="h-4 w-4" />
+                        <Button onClick={confirmImport} disabled={importing} className="gap-2">
+                          {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                           Importer {importPreview.length} contacts
                         </Button>
                       </div>
@@ -215,59 +243,70 @@ export default function ContactsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left p-3 font-medium">Nom</th>
-                    <th className="text-left p-3 font-medium">Email</th>
-                    <th className="text-left p-3 font-medium">Téléphone</th>
-                    <th className="text-left p-3 font-medium">Importé le</th>
-                    <th className="text-left p-3 font-medium">Statut</th>
-                    <th className="text-right p-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredContacts.map((contact) => {
-                    const status = statusConfig[contact.status];
-                    return (
-                      <tr key={contact.id} className="border-t hover:bg-muted/30 transition-colors">
-                        <td className="p-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                              {contact.firstName[0]}
-                              {contact.lastName[0]}
+            {contacts.length === 0 ? (
+              <div className="text-center py-12">
+                <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                <p className="font-medium">Aucun contact</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Importez vos patients depuis un export CSV Doctolib
+                </p>
+                <Button className="mt-4 gap-2" onClick={() => setShowImport(true)}>
+                  <Upload className="h-4 w-4" />
+                  Importer CSV
+                </Button>
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left p-3 font-medium">Nom</th>
+                      <th className="text-left p-3 font-medium">Email</th>
+                      <th className="text-left p-3 font-medium">Téléphone</th>
+                      <th className="text-left p-3 font-medium">Importé le</th>
+                      <th className="text-left p-3 font-medium">Statut</th>
+                      <th className="text-right p-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredContacts.map((contact) => {
+                      const status = statusConfig[contact.status] || statusConfig.pending;
+                      return (
+                        <tr key={contact.id} className="border-t hover:bg-muted/30 transition-colors">
+                          <td className="p-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                                {contact.firstName[0]}{contact.lastName[0]}
+                              </div>
+                              <span className="font-medium">{contact.firstName} {contact.lastName}</span>
                             </div>
-                            <span className="font-medium">
-                              {contact.firstName} {contact.lastName}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-3 text-muted-foreground">{contact.email}</td>
-                        <td className="p-3 text-muted-foreground">{contact.phone || "—"}</td>
-                        <td className="p-3 text-muted-foreground">{contact.importedAt}</td>
-                        <td className="p-3">
-                          <Badge variant={status.variant} className="gap-1 text-[11px]">
-                            <status.icon className="h-3 w-3" />
-                            {status.label}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteContact(contact.id)}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="p-3 text-muted-foreground">{contact.email}</td>
+                          <td className="p-3 text-muted-foreground">{contact.phone || "—"}</td>
+                          <td className="p-3 text-muted-foreground">{contact.importedAt}</td>
+                          <td className="p-3">
+                            <Badge variant={status.variant} className="gap-1 text-[11px]">
+                              <status.icon className="h-3 w-3" />
+                              {status.label}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteContact(contact.id)}
+                              className="text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

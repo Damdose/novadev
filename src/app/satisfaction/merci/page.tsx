@@ -1,21 +1,42 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Star, ExternalLink, Heart } from "lucide-react";
+import { CheckCircle2, Star, ExternalLink, Heart, Loader2 } from "lucide-react";
 import { Suspense } from "react";
 
 function MerciContent() {
   const searchParams = useSearchParams();
   const shouldRedirect = searchParams.get("redirect") === "google";
 
+  const [settings, setSettings] = useState<{
+    googleUrl: string;
+    positiveTitle: string;
+    positiveMessage: string;
+    negativeMessage: string;
+    buttonText: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then(setSettings);
+  }, []);
+
+  if (!settings) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 via-white to-white flex flex-col">
       <div className="flex items-center justify-center gap-2 py-6">
-        <div className="h-9 w-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
-          N
-        </div>
+        <div className="h-9 w-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">N</div>
         <span className="text-lg font-semibold tracking-tight">Novadev</span>
       </div>
 
@@ -30,11 +51,10 @@ function MerciContent() {
 
             <div className="space-y-2">
               <h1 className="text-2xl font-bold tracking-tight">
-                Merci pour votre retour !
+                {shouldRedirect ? settings.positiveTitle : "Merci pour votre retour !"}
               </h1>
               <p className="text-muted-foreground">
-                Vos réponses nous aident à améliorer la qualité de nos services
-                pour mieux accompagner les familles.
+                Vos réponses nous aident à améliorer la qualité de nos services pour mieux accompagner les familles.
               </p>
             </div>
 
@@ -43,29 +63,17 @@ function MerciContent() {
                 <div className="rounded-lg border bg-amber-50/50 border-amber-200/50 p-4 space-y-2">
                   <div className="flex items-center justify-center gap-1">
                     {[1, 2, 3, 4, 5].map((i) => (
-                      <Star
-                        key={i}
-                        className="h-5 w-5 fill-amber-400 text-amber-400"
-                      />
+                      <Star key={i} className="h-5 w-5 fill-amber-400 text-amber-400" />
                     ))}
                   </div>
-                  <p className="text-sm font-medium">
-                    Votre expérience a été positive !
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Partagez votre avis sur Google pour aider d&apos;autres
-                    parents à découvrir Novadev.
-                  </p>
+                  <p className="text-sm font-medium">Votre expérience a été positive !</p>
+                  <p className="text-sm text-muted-foreground">{settings.positiveMessage}</p>
                 </div>
 
-                <a
-                  href="https://share.google/igfsYUvospskPEr9k"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a href={settings.googleUrl} target="_blank" rel="noopener noreferrer">
                   <Button className="w-full gap-2 h-12" size="lg">
                     <Star className="h-4 w-4" />
-                    Laisser un avis Google
+                    {settings.buttonText}
                     <ExternalLink className="h-3 w-3" />
                   </Button>
                 </a>
@@ -80,11 +88,7 @@ function MerciContent() {
                   <div className="flex items-center justify-center gap-2 mb-2">
                     <Heart className="h-4 w-4 text-primary" />
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Nous avons bien noté vos remarques. Notre équipe les
-                    examinera avec attention pour améliorer votre prochaine
-                    expérience.
-                  </p>
+                  <p className="text-sm text-muted-foreground">{settings.negativeMessage}</p>
                 </div>
               </div>
             )}
@@ -101,7 +105,11 @@ function MerciContent() {
 
 export default function MerciPage() {
   return (
-    <Suspense>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    }>
       <MerciContent />
     </Suspense>
   );
