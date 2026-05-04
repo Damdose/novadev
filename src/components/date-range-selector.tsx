@@ -21,6 +21,9 @@ const PRESETS = [
   { value: "14", label: "14 derniers jours" },
   { value: "30", label: "30 derniers jours" },
   { value: "90", label: "90 derniers jours" },
+  { value: "180", label: "6 derniers mois" },
+  { value: "365", label: "12 derniers mois" },
+  { value: "all", label: "Depuis le début" },
   { value: "custom", label: "Personnalisé" },
 ] as const;
 
@@ -34,14 +37,16 @@ function today(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-export function useDateRange(defaultDays = 30) {
+export function useDateRange(defaultDays: number | "all" = 30) {
   const [preset, setPreset] = useState(String(defaultDays));
-  const [customStart, setCustomStart] = useState(daysAgo(defaultDays));
+  const [customStart, setCustomStart] = useState(defaultDays === "all" ? "2020-01-01" : daysAgo(defaultDays));
   const [customEnd, setCustomEnd] = useState(today());
 
   const range: DateRange =
     preset === "custom"
       ? { startDate: customStart, endDate: customEnd }
+      : preset === "all"
+      ? { startDate: "2020-01-01", endDate: today() }
       : { startDate: daysAgo(Number(preset)), endDate: today() };
 
   return { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, range };

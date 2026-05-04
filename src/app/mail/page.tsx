@@ -24,6 +24,7 @@ import {
   Users,
   ExternalLink,
 } from "lucide-react";
+import { useDateRange, DateRangeSelector } from "@/components/date-range-selector";
 
 interface Settings {
   senderName: string;
@@ -63,6 +64,7 @@ export default function MailPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterCampaign, setFilterCampaign] = useState<string>("all");
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, range } = useDateRange(90);
 
   // Email template state
   const [subject, setSubject] = useState(
@@ -113,7 +115,14 @@ L'équipe Novadev`
   // Filters
   const campaigns = Array.from(new Set(tracking.map((t) => t.campaignName)));
 
-  const filtered = tracking.filter((entry) => {
+  // Filter by date range first
+  const dateFilteredTracking = tracking.filter((entry) => {
+    if (!entry.sentAt) return true; // include unsent entries
+    const d = entry.sentAt.split("T")[0];
+    return d >= range.startDate && d <= range.endDate;
+  });
+
+  const filtered = dateFilteredTracking.filter((entry) => {
     const matchesSearch =
       searchQuery === "" ||
       `${entry.firstName} ${entry.lastName} ${entry.email}`
@@ -129,10 +138,10 @@ L'équipe Novadev`
     return matchesSearch && matchesStatus && matchesCampaign;
   });
 
-  // Stats
-  const totalSent = tracking.filter((t) => t.emailSent).length;
-  const totalOpened = tracking.filter((t) => t.emailOpened).length;
-  const totalCompleted = tracking.filter((t) => t.contactStatus === "completed").length;
+  // Stats based on date-filtered data
+  const totalSent = dateFilteredTracking.filter((t) => t.emailSent).length;
+  const totalOpened = dateFilteredTracking.filter((t) => t.emailOpened).length;
+  const totalCompleted = dateFilteredTracking.filter((t) => t.contactStatus === "completed").length;
 
   if (loading) {
     return (
@@ -147,11 +156,21 @@ L'équipe Novadev`
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Mail</h1>
-          <p className="text-muted-foreground mt-1">
-            Éditez le template d&apos;email et suivez les envois
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Mail</h1>
+            <p className="text-muted-foreground mt-1">
+              Éditez le template d&apos;email et suivez les envois
+            </p>
+          </div>
+          <DateRangeSelector
+            preset={preset}
+            onPresetChange={setPreset}
+            customStart={customStart}
+            onCustomStartChange={setCustomStart}
+            customEnd={customEnd}
+            onCustomEndChange={setCustomEnd}
+          />
         </div>
 
         <Tabs defaultValue="editor">
@@ -163,9 +182,9 @@ L'équipe Novadev`
             <TabsTrigger value="tracking" className="gap-2">
               <Users className="h-4 w-4" />
               Suivi des envois
-              {tracking.length > 0 && (
+              {dateFilteredTracking.length > 0 && (
                 <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                  {tracking.length}
+                  {dateFilteredTracking.length}
                 </Badge>
               )}
             </TabsTrigger>

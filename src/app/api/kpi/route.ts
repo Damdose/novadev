@@ -53,6 +53,35 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, field, value } = body;
+
+    if (!id || !field) {
+      return Response.json({ error: "id and field are required" }, { status: 400 });
+    }
+
+    const allowedFields = ["appelsCentre", "rdvDoctolib", "messagesDoctolib", "messagesWebflow", "traficSite"];
+    if (!allowedFields.includes(field)) {
+      return Response.json({ error: "Invalid field" }, { status: 400 });
+    }
+
+    const kpi = await prisma.weeklyKpi.update({
+      where: { id },
+      data: {
+        [field]: parseInt(value) || 0,
+        updatedAt: new Date(),
+      },
+    });
+
+    return Response.json(kpi);
+  } catch (e) {
+    console.error("KPI PATCH error:", e);
+    return Response.json({ error: "Erreur lors de la mise à jour" }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;

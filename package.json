@@ -10,14 +10,16 @@
     "seed": "tsx scripts/seed-admin.ts"
   },
   "dependencies": {
+    "@auth/core": "^0.34.3",
     "@base-ui/react": "^1.3.0",
-    "@libsql/client": "^0.17.2",
+    "@libsql/client": "^0.17.3",
     "@prisma/adapter-libsql": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.7.0",
     "next": "16.2.2",
+    "next-auth": "^4.24.14",
     "papaparse": "^5.5.3",
     "prisma": "^7.7.0",
     "react": "19.2.4",

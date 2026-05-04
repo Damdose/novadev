@@ -19,6 +19,7 @@ import {
   Smartphone,
   RotateCcw,
 } from "lucide-react";
+import { useDateRange, DateRangeSelector } from "@/components/date-range-selector";
 
 interface Section {
   id: number;
@@ -55,6 +56,7 @@ export default function ResultsPage() {
   const [responseTab, setResponseTab] = useState("all");
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [iframeKey, setIframeKey] = useState(0);
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, range } = useDateRange(90);
 
   useEffect(() => {
     Promise.all([
@@ -82,23 +84,29 @@ export default function ResultsPage() {
     );
   }
 
-  const positiveResponses = responses.filter((r) => r.isPositive);
-  const negativeResponses = responses.filter((r) => !r.isPositive);
-  const avgScore = responses.length > 0
-    ? responses.reduce((sum, r) => sum + r.averageScore, 0) / responses.length
+  // Filter by date range
+  const dateFilteredResponses = responses.filter((r) => {
+    const d = r.completedAt.split("T")[0];
+    return d >= range.startDate && d <= range.endDate;
+  });
+
+  const positiveResponses = dateFilteredResponses.filter((r) => r.isPositive);
+  const negativeResponses = dateFilteredResponses.filter((r) => !r.isPositive);
+  const avgScore = dateFilteredResponses.length > 0
+    ? dateFilteredResponses.reduce((sum, r) => sum + r.averageScore, 0) / dateFilteredResponses.length
     : 0;
-  const redirectedCount = responses.filter((r) => r.redirectedToGoogle).length;
+  const redirectedCount = dateFilteredResponses.filter((r) => r.redirectedToGoogle).length;
 
   const filteredResponses =
     responseTab === "positive" ? positiveResponses
     : responseTab === "negative" ? negativeResponses
-    : responses;
+    : dateFilteredResponses;
 
   // Build flat question list for averages
   const allQuestions = sections.flatMap((s) => s.questions ?? []);
 
   const questionAverages = allQuestions.map((q, idx) => {
-    const validScores = responses
+    const validScores = dateFilteredResponses
       .map((r) => r.scores[idx])
       .filter((s) => s !== undefined && s > 0);
     const avg = validScores.length > 0
@@ -121,9 +129,19 @@ export default function ResultsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Satisfaction</h1>
-          <p className="text-muted-foreground mt-1">Previsualisez le questionnaire et analysez les reponses</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Satisfaction</h1>
+            <p className="text-muted-foreground mt-1">Previsualisez le questionnaire et analysez les reponses</p>
+          </div>
+          <DateRangeSelector
+            preset={preset}
+            onPresetChange={setPreset}
+            customStart={customStart}
+            onCustomStartChange={setCustomStart}
+            customEnd={customEnd}
+            onCustomEndChange={setCustomEnd}
+          />
         </div>
 
         <Tabs defaultValue="resultats" className="space-y-6">
@@ -134,7 +152,7 @@ export default function ResultsPage() {
             </TabsTrigger>
             <TabsTrigger value="resultats" className="gap-2">
               <BarChart3 className="h-3.5 w-3.5" />
-              Resultats ({responses.length})
+              Resultats ({dateFilteredResponses.length})
             </TabsTrigger>
           </TabsList>
 
@@ -205,7 +223,7 @@ export default function ResultsPage() {
 
           {/* ── Results tab ── */}
           <TabsContent value="resultats" className="space-y-6">
-            {/* Stats cards */}
+            {/* Stats cards — based on date-filtered responses */}
             <div className="grid gap-4 md:grid-cols-4">
               <Card>
                 <CardContent className="pt-6">
@@ -301,7 +319,7 @@ export default function ResultsPage() {
                   </CardTitle>
                   <Tabs value={responseTab} onValueChange={setResponseTab}>
                     <TabsList>
-                      <TabsTrigger value="all">Toutes ({responses.length})</TabsTrigger>
+                      <TabsTrigger value="all">Toutes ({dateFilteredResponses.length})</TabsTrigger>
                       <TabsTrigger value="positive">Positives ({positiveResponses.length})</TabsTrigger>
                       <TabsTrigger value="negative">Negatives ({negativeResponses.length})</TabsTrigger>
                     </TabsList>

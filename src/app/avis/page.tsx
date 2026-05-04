@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { mockResponses } from "@/lib/mock-data";
 import { SURVEY_QUESTIONS, POSITIVE_THRESHOLD, SurveyResponse } from "@/lib/types";
+import { useDateRange, DateRangeSelector } from "@/components/date-range-selector";
 
 interface GoogleReview {
   reviewId: string;
@@ -65,6 +66,7 @@ interface ReviewReply {
 export default function AvisPage() {
   const [tab, setTab] = useState("google");
   const [search, setSearch] = useState("");
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, range } = useDateRange(90);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [replies, setReplies] = useState<ReviewReply[]>([]);
@@ -184,16 +186,21 @@ export default function AvisPage() {
     (r) => !replies.some((rep) => rep.responseId === r.id)
   ).length;
 
-  // Google reviews filtering
-  const googlePositive = googleReviews.filter(
+  // Filter Google reviews by date range
+  const dateFilteredGoogleReviews = googleReviews.filter((r) => {
+    const d = r.createTime.split("T")[0];
+    return d >= range.startDate && d <= range.endDate;
+  });
+
+  const googlePositive = dateFilteredGoogleReviews.filter(
     (r) => STAR_MAP[r.starRating] >= 4
   );
-  const googleNegative = googleReviews.filter(
+  const googleNegative = dateFilteredGoogleReviews.filter(
     (r) => STAR_MAP[r.starRating] < 4
   );
-  const googleUnreplied = googleReviews.filter((r) => !r.reviewReply);
+  const googleUnreplied = dateFilteredGoogleReviews.filter((r) => !r.reviewReply);
 
-  const filteredGoogleReviews = googleReviews
+  const filteredGoogleReviews = dateFilteredGoogleReviews
     .filter((r) => {
       if (tab === "google-positive") return STAR_MAP[r.starRating] >= 4;
       if (tab === "google-negative") return STAR_MAP[r.starRating] < 4;
@@ -270,7 +277,15 @@ export default function AvisPage() {
               Avis Google My Business et retours de satisfaction internes
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <DateRangeSelector
+              preset={preset}
+              onPresetChange={setPreset}
+              customStart={customStart}
+              onCustomStartChange={setCustomStart}
+              customEnd={customEnd}
+              onCustomEndChange={setCustomEnd}
+            />
             {googleConnected && (
               <Button
                 variant="outline"
@@ -351,7 +366,7 @@ export default function AvisPage() {
           <TabsList>
             <TabsTrigger value="google" className="gap-2">
               <MapPin className="h-4 w-4" />
-              Google ({googleReviews.length})
+              Google ({dateFilteredGoogleReviews.length})
             </TabsTrigger>
             <TabsTrigger value="google-unreplied" className="gap-2">
               Sans réponse ({googleUnreplied.length})

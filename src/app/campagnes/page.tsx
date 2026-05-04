@@ -35,6 +35,7 @@ import {
   Clock,
 } from "lucide-react";
 import Papa from "papaparse";
+import { useDateRange, DateRangeSelector } from "@/components/date-range-selector";
 
 interface Campaign {
   id: string;
@@ -85,6 +86,7 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, range } = useDateRange("all");
   const [showNew, setShowNew] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -146,6 +148,12 @@ L'équipe Novadev`,
   }, []);
 
   const pendingContacts = contacts.filter((c) => c.status === "pending");
+
+  // Filter campaigns by date range
+  const filteredCampaigns = campaigns.filter((c) => {
+    const d = c.createdAt.split("T")[0];
+    return d >= range.startDate && d <= range.endDate;
+  });
 
   const handleCreate = async () => {
     setCreating(true);
@@ -249,18 +257,28 @@ L'équipe Novadev`,
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Campagnes</h1>
-          <p className="text-muted-foreground mt-1">
-            Importez vos contacts et lancez des campagnes de collecte d&apos;avis
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Campagnes</h1>
+            <p className="text-muted-foreground mt-1">
+              Importez vos contacts et lancez des campagnes de collecte d&apos;avis
+            </p>
+          </div>
+          <DateRangeSelector
+            preset={preset}
+            onPresetChange={setPreset}
+            customStart={customStart}
+            onCustomStartChange={setCustomStart}
+            customEnd={customEnd}
+            onCustomEndChange={setCustomEnd}
+          />
         </div>
 
         <Tabs defaultValue="campagnes" className="space-y-6">
           <TabsList>
             <TabsTrigger value="campagnes" className="gap-2">
               <Send className="h-3.5 w-3.5" />
-              Campagnes ({campaigns.length})
+              Campagnes ({filteredCampaigns.length})
             </TabsTrigger>
             <TabsTrigger value="contacts" className="gap-2">
               <Users className="h-3.5 w-3.5" />
@@ -387,7 +405,7 @@ L'équipe Novadev`,
               </Dialog>
             </div>
 
-            {campaigns.length === 0 ? (
+            {filteredCampaigns.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <Mail className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
@@ -399,7 +417,7 @@ L'équipe Novadev`,
               </Card>
             ) : (
               <div className="space-y-4">
-                {campaigns.map((campaign) => {
+                {filteredCampaigns.map((campaign) => {
                   const completionRate = campaign.contactCount > 0
                     ? Math.round((campaign.completedCount / campaign.contactCount) * 100)
                     : 0;

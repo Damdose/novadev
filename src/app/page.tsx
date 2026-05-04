@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useDateRange, DateRangeSelector } from "@/components/date-range-selector";
 import {
   Users,
   Send,
@@ -301,6 +302,7 @@ export default function DashboardPage() {
   const [mailTracking, setMailTracking] = useState<MailTracking[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { preset, setPreset, customStart, setCustomStart, customEnd, setCustomEnd, range } = useDateRange(30);
 
   useEffect(() => {
     async function fetchData() {
@@ -333,8 +335,8 @@ export default function DashboardPage() {
 
         if (statusData.authenticated) {
           const [analyticsRes, seoRes, reviewsRes] = await Promise.all([
-            fetch("/api/google/analytics").catch(() => null),
-            fetch("/api/google/search-console").catch(() => null),
+            fetch(`/api/google/analytics?startDate=${range.startDate}&endDate=${range.endDate}`).catch(() => null),
+            fetch(`/api/google/search-console?startDate=${range.startDate}&endDate=${range.endDate}`).catch(() => null),
             fetch("/api/google/reviews").catch(() => null),
           ]);
           if (analyticsRes?.ok) { const d = await analyticsRes.json(); if (!d.error) setAnalytics(d); }
@@ -348,7 +350,7 @@ export default function DashboardPage() {
       }
     }
     fetchData();
-  }, []);
+  }, [range.startDate, range.endDate]);
 
   if (loading) {
     return (
@@ -360,10 +362,20 @@ export default function DashboardPage() {
     );
   }
 
+  // Filter KPI history by date range
+  const filteredKpiHistory = kpiHistory.filter((k) => {
+    const ws = k.weekStart.split("T")[0];
+    return ws >= range.startDate && ws <= range.endDate;
+  });
+
   const latestKpi = dashboard?.latestKpi;
   const previousKpi = dashboard?.previousKpi;
   const campaigns = dashboard?.campaigns || [];
-  const responses = dashboard?.recentResponses || [];
+  const allResponses = dashboard?.recentResponses || [];
+  const responses = allResponses.filter((r) => {
+    const d = r.completedAt.split("T")[0];
+    return d >= range.startDate && d <= range.endDate;
+  });
   const totalResponses = dashboard?.totalResponses || 0;
   const positiveCount = dashboard?.positiveCount || 0;
   const negativeCount = totalResponses - positiveCount;
@@ -421,6 +433,14 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <DateRangeSelector
+              preset={preset}
+              onPresetChange={setPreset}
+              customStart={customStart}
+              onCustomStartChange={setCustomStart}
+              customEnd={customEnd}
+              onCustomEndChange={setCustomEnd}
+            />
             {activeCampaign && (
               <Badge variant="outline" className="gap-1.5 py-1 px-2.5">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
